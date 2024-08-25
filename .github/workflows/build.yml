@@ -6,41 +6,41 @@ on:
   pull_request:
 
 jobs:
-  build-ubuntu:
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install libgtk-4-dev build-essential
-          pkg-config --modversion gtk4
-          pkg-config --cflags gtk4
-          pkg-config --libs gtk4
-      - name: Build
-        run: |
-          cd ${{ github.workspace }}
-          RUSTFLAGS='-C target-feature=+crt-static' cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom --bin dicom2gdt --bin gdt2opp --bin gdt2vdds
-          cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gui
-      - name: Check format
-        run: |
-          cd ${{ github.workspace }}
-          rustfmt --check src/**/*.rs
-      - name: 'Upload Artifact'
-        uses: actions/upload-artifact@v3
-        with:
-          name: Linux artifact
-          path: |
-            ./target/x86_64-unknown-linux-gnu/release/gdt2dicom
-            ./target/x86_64-unknown-linux-gnu/release/dicom2gdt
-            ./target/x86_64-unknown-linux-gnu/release/gdt2opp
-            ./target/x86_64-unknown-linux-gnu/release/gdt2vdds
-            ./target/x86_64-unknown-linux-gnu/release/gui
-          retention-days: 5
+  # build-ubuntu:
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - name: Check out repository code
+  #       uses: actions/checkout@v3
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         toolchain: stable
+  #     - name: Install dependencies
+  #       run: |
+  #         sudo apt update
+  #         sudo apt install libgtk-4-dev build-essential
+  #         pkg-config --modversion gtk4
+  #         pkg-config --cflags gtk4
+  #         pkg-config --libs gtk4
+  #     - name: Build
+  #       run: |
+  #         cd ${{ github.workspace }}
+  #         RUSTFLAGS='-C target-feature=+crt-static' cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gdt2dicom --bin dicom2gdt --bin gdt2opp --bin gdt2vdds
+  #         cargo build --verbose --release --target x86_64-unknown-linux-gnu --bin gui
+  #     - name: Check format
+  #       run: |
+  #         cd ${{ github.workspace }}
+  #         rustfmt --check src/**/*.rs
+  #     - name: 'Upload Artifact'
+  #       uses: actions/upload-artifact@v3
+  #       with:
+  #         name: Linux artifact
+  #         path: |
+  #           ./target/x86_64-unknown-linux-gnu/release/gdt2dicom
+  #           ./target/x86_64-unknown-linux-gnu/release/dicom2gdt
+  #           ./target/x86_64-unknown-linux-gnu/release/gdt2opp
+  #           ./target/x86_64-unknown-linux-gnu/release/gdt2vdds
+  #           ./target/x86_64-unknown-linux-gnu/release/gui
+  #         retention-days: 5
 
   build-windows:
     runs-on: windows-latest
@@ -54,11 +54,27 @@ jobs:
           py -3.12 -m pipx ensurepath
           pipx install gvsbuild
           gvsbuild build gtk4
+      # - name: Setup ssh session
+      #   uses: Warpbuilds/action-debugger@v1.3
       - name: Build
         run: |
           cd ${{ github.workspace }}
           $env:PKG_CONFIG_PATH="/mingw64/lib/pkgconfig;/mingw64/share/pkgconfig;C:/gtk-build/gtk/x64/release/lib/pkgconfig"
           cargo build --verbose --release
+      # - name: 'Upload Artifact'
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: gtk-bin
+      #     path: |
+      #       C:/gtk-build/gtk/x64/release/bin/
+      #     retention-days: 5
+      - name: 'Upload Artifact'
+        uses: actions/upload-artifact@v3
+        with:
+          name: Debug-Share
+          path: |
+            C:/gtk-build/gtk/x64/release/share
+          retention-days: 5
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
@@ -68,84 +84,146 @@ jobs:
             .\target\release\dicom2gdt.exe
             .\target\release\gdt2opp.exe
             .\target\release\gdt2vdds.exe
-            .\target\release\gui.exe
           retention-days: 5
-
-  build-windows-gui:
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/mglolenstine/gtk4-cross:gtk-4.12
-    steps:
-      - uses: actions/checkout@v1
-      - name: Install additional dependencies
-        # gio is for the build script
+      - name: Copy GUI dependencies
         run: |
-          dnf install mingw64-poppler mingw64-poppler-glib mingw32-python3 rust-gio-devel adwaita-icon-theme wget gtk4-devel gcc vulkan -y && dnf clean all -y
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          target: x86_64-pc-windows-gnu
-      - name: Cache ~/.cargo
-        uses: actions/cache@v1
-        with:
-          path: ~/.cargo
-          key: windows-dotcargo
-      - name: Cache cargo build
-        uses: actions/cache@v1
-        with:
-          path: target
-          key: windows-build-target
-      - name: Cross compile for Windows
-        run: |
-          #!/bin/bash
-          set -euo pipefail
-          export PKG_CONFIG_PATH=/usr/lib64/pkgconfig:/usr/share/pkgconfig:$MINGW_PREFIX/lib/pkgconfig/:/usr/x86_64-w64-mingw32/lib/pkgconfig/
-
-          cargo build --target=x86_64-pc-windows-gnu --release --locked --bin gui
-
-          mkdir -p package
-          cp target/x86_64-pc-windows-gnu/release/*.exe package/
-          # package/gui.exe
-      - name: Package
-        run: |
-          #!/bin/bash
-          set -euo pipefail
-
-          package
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: windows-gui
-          path: |
-            ./package
-          if-no-files-found: error
-
-  build-mac:
-    runs-on: macos-latest
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v3
-      - name: Install dependencies
-        run: |
-          brew install gtk4
-      - name: Build
-        run: |
-          cd ${{ github.workspace }}
-          cargo build --release
-      - name: Check format
-        run: |
-          cd ${{ github.workspace }}
-          rustfmt --check src/**/*.rs
+          cp C:/gtk-build/gtk/x64/release/bin/cairo-2.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/harfbuzz.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/fribidi-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/cairo-gobject-2.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/gdk_pixbuf-2.0-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/epoxy-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/zlib1.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/graphene-1.0-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/pangowin32-1.0-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/iconv.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/libpng16.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/tiff.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/jpeg62.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/cairo-script-interpreter-2.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/freetype-6.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/pixman-1-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/gio-2.0-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/glib-2.0-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/gobject-2.0-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/gtk-4-1.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/ffi-8.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/intl.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/pcre2-8-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/gmodule-2.0-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/pangocairo-1.0-0.dll ./target/release/
+          cp C:/gtk-build/gtk/x64/release/bin/pango-1.0-0.dll ./target/release/
       - name: 'Upload Artifact'
         uses: actions/upload-artifact@v3
         with:
-          name: Mac Artifact
+          name: GUI
           path: |
-            ./target/release/gdt2dicom
-            ./target/release/dicom2gdt
-            ./target/release/gdt2opp
-            ./target/release/gdt2vdds
-            ./target/release/gui
+            .\target\release\gui.exe
+            .\target\release\cairo-2.dll
+            .\target\release\harfbuzz.dll
+            .\target\release\fribidi-0.dll
+            .\target\release\cairo-gobject-2.dll
+            .\target\release\gdk_pixbuf-2.0-0.dll
+            .\target\release\epoxy-0.dll
+            .\target\release\zlib1.dll
+            .\target\release\graphene-1.0-0.dll
+            .\target\release\pangowin32-1.0-0.dll
+            .\target\release\iconv.dll
+            .\target\release\libpng16.dll
+            .\target\release\tiff.dll
+            .\target\release\jpeg62.dll
+            .\target\release\cairo-script-interpreter-2.dll
+            .\target\release\freetype-6.dll
+            .\target\release\pixman-1-0.dll
+            .\target\release\gio-2.0-0.dll
+            .\target\release\glib-2.0-0.dll
+            .\target\release\gobject-2.0-0.dll
+            .\target\release\gtk-4-1.dll
+            .\target\release\ffi-8.dll
+            .\target\release\intl.dll
+            .\target\release\pcre2-8-0.dll
+            .\target\release\gmodule-2.0-0.dll
+            .\target\release\pangocairo-1.0-0.dll
+            .\target\release\pango-1.0-0.dll
           retention-days: 5
+
+  # build-windows-gui:
+  #   runs-on: ubuntu-latest
+  #   container:
+  #     image: ghcr.io/mglolenstine/gtk4-cross:rust-gtk-4.12
+  #   steps:
+  #     - uses: actions/checkout@v1
+  #     - name: Install additional dependencies
+  #       # gio is for the build script
+  #       run: |
+  #         dnf install mingw64-poppler mingw64-poppler-glib mingw32-python3 rust-gio-devel adwaita-icon-theme wget gtk4-devel gcc -y && dnf clean all -y
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         profile: minimal
+  #         toolchain: stable
+  #         target: x86_64-pc-windows-gnu
+  #     - name: Cache ~/.cargo
+  #       uses: actions/cache@v1
+  #       with:
+  #         path: ~/.cargo
+  #         key: windows-dotcargo
+  #     - name: Cache cargo build
+  #       uses: actions/cache@v1
+  #       with:
+  #         path: target
+  #         key: windows-build-target
+  #     - name: Setup ssh session
+  #       uses: Warpbuilds/action-debugger@v1.3
+  #     - name: Cross compile for Windows
+  #       run: |
+  #         #!/bin/bash
+  #         set -euo pipefail
+  #         export PKG_CONFIG_PATH=/usr/lib64/pkgconfig:/usr/share/pkgconfig:$MINGW_PREFIX/lib/pkgconfig/:/usr/x86_64-w64-mingw32/lib/pkgconfig/
+
+  #         cargo build --target=x86_64-pc-windows-gnu --release --locked --bin gui
+
+  #         mkdir -p package
+  #         cp target/x86_64-pc-windows-gnu/release/*.exe package/
+  #         # package/gui.exe
+  #     - name: Package
+  #       run: |
+  #         #!/bin/bash
+  #         set -euo pipefail
+
+  #         package
+
+  #     - name: Upload artifacts
+  #       uses: actions/upload-artifact@v3
+  #       with:
+  #         name: windows-gui
+  #         path: |
+  #           ./package
+  #         if-no-files-found: error
+
+  # build-mac:
+  #   runs-on: macos-latest
+  #   steps:
+  #     - name: Check out repository code
+  #       uses: actions/checkout@v3
+  #     - name: Install dependencies
+  #       run: |
+  #         brew install gtk4
+  #     - name: Build
+  #       run: |
+  #         cd ${{ github.workspace }}
+  #         cargo build --release
+  #     - name: Check format
+  #       run: |
+  #         cd ${{ github.workspace }}
+  #         rustfmt --check src/**/*.rs
+  #     - name: 'Upload Artifact'
+  #       uses: actions/upload-artifact@v3
+  #       with:
+  #         name: Mac Artifact
+  #         path: |
+  #           ./target/release/gdt2dicom
+  #           ./target/release/dicom2gdt
+  #           ./target/release/gdt2opp
+  #           ./target/release/gdt2vdds
+  #           ./target/release/gui
+  #         retention-days: 5
